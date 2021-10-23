@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<link id="head_favicon" rel="icon" type="image/png" href="/internalres/juglan-webserver/favicon-16x16.png">
+		<title>---</title>
+		<script>
+			// Create WebSocket connection.
+			var protocol = window.location.protocol == "https" ? "wss" : "ws";
+			var socket = new WebSocket(protocol + '://' + window.location.hostname + ':%WSPORT%/websocket?path=' + window.location.pathname);
+			
+			socket.onopen = function(e) {
+			  console.log("[open] Connection established");
+			  // console.log("Sending to server");
+			  // socket.send("My name is John");
+			};
+			
+			socket.onmessage = function(event) {
+			  // console.log(`[message] Data received from server: ${event.data}`);
+			  parsePacket(event.data);
+			};
+			
+			socket.onclose = function(event) {
+			  if (event.wasClean) {
+			    console.log(`[close] Connection closed cleanly, code=${event.code} reason=${event.reason}`);
+			  } else {
+			    // e.g. server process killed or network down
+			    // event.code is usually 1006 in this case
+			    console.log('[close] Connection died');
+			  }
+			};
+			
+			socket.onerror = function(error) {
+			  console.log(`[error] ${error.message}`);
+			};
+			
+			function parsePacket(jsonString) {
+				var json = JSON.parse(jsonString);
+				if(json.packet == "TitleChangePacket") {
+					document.title = json.title;
+				} else if(json.packet == "FaviconChangePacket") {
+					document.getElementById("head_favicon").href = json.path;
+				} else if(json.packet == "AddChildPacket") {
+					var parentElement = document.getElementById(json.nodeId);
+					var content = json.html;
+					var index = json.index;
+					parentElement.insertBefore(htmlToElement(content), parentElement.childNodes[index]);
+				} else if(json.packet == "RemoveNodePacket") {
+					var el = document.getElementById(json.nodeId);
+					el.remove();
+				} else if(json.packet == "RemoveNodeChildrenPacket") {
+					var el = document.getElementById(json.nodeId);
+					el.textContent = "";
+				} else if(json.packet == "SetNodeAttributePacket") {
+					var el = document.getElementById(json.nodeId);
+					if(json.key == "value") el.value = json.value;
+					else if(json.key == "checked") el.checked = json.value;
+					else el.setAttribute(json.key, json.value);
+				} else if(json.packet == "RemoveNodeAttributePacket") {
+					var el = document.getElementById(json.nodeId);
+					if(json.key == "value") el.value = "";
+					else if(json.key == "checked") el.checked = false;
+					else el.removeAttribute(json.key);
+				} else if(json.packet == "SetNodeStyleAttributePacket") {
+					var el = document.getElementById(json.nodeId);
+					el.style.setProperty(json.key, json.value);
+				} else if(json.packet == "RemoveNodeStyleAttributePacket") {
+					var el = document.getElementById(json.nodeId);
+					el.style.removeProperty(json.key);
+				} else if(json.packet == "AddScriptPacket") {
+					var js = document.createElement('script');
+					js.type = 'text/javascript';
+					js.src = json.path;
+					var s = document.getElementsByTagName('script')[0];
+					s.parentNode.insertBefore(js, s);
+				} else if(json.packet == "AddStylePacket") {
+					var js = document.createElement('link');
+					js.rel = 'stylesheet';
+					js.type = 'text/css';
+					js.href = json.path;
+					var s = document.getElementsByTagName('link')[0];
+					s.parentNode.insertBefore(js, s);
+				} else if(json.packet == "CallFunctionPacket") {
+					executeFunctionByName(json.function, json.args);
+				} else if(json.packet == "ShowAlertPacket") {
+					alert(json.message);
+				} else if(json.packet == "OpenLinkPacket") {
+					var v = window.open(json.link, json.target);
+					if(json.focus) v.focus();
+				} // else if the packet is not recognized silently ignore
+			}
+			
+			function htmlToElement(html) {
+			    html = html.trim(); // Never return a text node of whitespace as the result
+			    var template = document.createElement('template');
+			    template.innerHTML = html;
+			    return template.content.firstChild;
+			}
+			
+			document.addEventListener("click", function(evt) {
+				evt.stopPropagation();
+				if(evt.target.id == "") return;
+				var data = {
+					packet: "MouseClickEventPacket",
+					nodeId: evt.target.id,
+					x: evt.clientX,
+					y: evt.clientY,
+					altDown: evt.altKey,
+					shiftDown: evt.shiftKey,
+					controlDown: evt.ctrlKey,
+				};
+				socket.send(JSON.stringify(data));
+			});
+			
+			document.addEventListener("mousedown", function(evt) {
+				evt.stopPropagation();
+				if(evt.target.id == "") return;
+				var data = {
+					packet: "MouseDownEventPacket",
+					nodeId: evt.target.id,
+					x: evt.clientX,
+					y: evt.clientY,
+					altDown: evt.altKey,
+					shiftDown: evt.shiftKey,
+					controlDown: evt.ctrlKey,
+				};
+				socket.send(JSON.stringify(data));
+			});
+			
+			document.addEventListener("mouseup", function(evt) {
+				evt.stopPropagation();
+				if(evt.target.id == "") return;
+				var data = {
+					packet: "MouseUpEventPacket",
+					nodeId: evt.target.id,
+					x: evt.clientX,
+					y: evt.clientY,
+					altDown: evt.altKey,
+					shiftDown: evt.shiftKey,
+					controlDown: evt.ctrlKey,
+				};
+				socket.send(JSON.stringify(data));
+			});
+			
+			document.addEventListener("keypress", function(evt) {
+				evt.stopPropagation();
+				if(evt.target.id == "") return;
+				
+				var data = {
+					packet: "KeyPressEventPacket",
+					nodeId: evt.target.id,
+					key: evt.key,
+					altDown: evt.altKey,
+					shiftDown: evt.shiftKey,
+					controlDown: evt.ctrlKey,
+				};
+				socket.send(JSON.stringify(data));
+			});
+			
+			document.addEventListener("keyup", function(evt) {
+				evt.stopPropagation();
+				if(evt.target.id == "") return;
+				
+				var data = {
+					packet: "KeyUpEventPacket",
+					nodeId: evt.target.id,
+					key: evt.key,
+					altDown: evt.altKey,
+					shiftDown: evt.shiftKey,
+					controlDown: evt.ctrlKey,
+				};
+				socket.send(JSON.stringify(data));
+			});
+			
+			var scrollTimeoutArray = {};
+			window.addEventListener("scroll", function(evt) {
+				if(evt.target.id == "") return;
+				
+				if(evt.target.id in scrollTimeoutArray) {
+					clearTimeout(scrollTimeoutArray[evt.target.id]);
+					delete scrollTimeoutArray[evt.target.id];
+				}
+				
+				scrollTimeoutArray[evt.target.id] = setTimeout( function() {
+					var data = {
+						packet: "ScrollEventPacket",
+						nodeId: evt.target.id,
+						scrollX: evt.target.scrollLeft,
+						scrollY: evt.target.scrollTop,
+					};
+					socket.send(JSON.stringify(data));
+				}, 500);
+			}, true);
+			
+			document.addEventListener("change", function(evt) {
+				// evt.stopPropagation();
+				if(evt.target.id == "") return;
+				
+				var vle;
+				if(event.target.type == "checkbox")
+					vle = ""+evt.target.checked;
+				else
+					vle = ""+evt.target.value;
+				
+				var data = {
+					packet: "ValueChangeEventPacket",
+					nodeId: evt.target.id,
+					value: vle,
+				};
+				socket.send(JSON.stringify(data));
+			});
+			
+			function executeFunctionByName(functionName, args) {
+				var codeToExecute = functionName + "('" + args.join('\', \'') + "')";
+				var tmpFunc = new Function(codeToExecute);
+				tmpFunc();
+			}
+		</script>
+	</head>
+	<body id="body"></body>
+</html>
